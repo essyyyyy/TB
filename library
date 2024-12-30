@@ -1,0 +1,174 @@
+local Library = {
+    WindowCount = 0
+}
+
+local Dragger = {}
+local Resizer = {}
+
+-- Services
+local Players = game:GetService("Players")
+local InputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local CoreGui = game:GetService("CoreGui")
+local Debris = game:GetService("Debris")
+local TextService = game:GetService("TextService")
+
+local LocalPlayer = Players.LocalPlayer
+local Mouse = LocalPlayer:GetMouse()
+
+-- Dragger: Makes a GUI draggable
+function Dragger.new(Frame)
+    local success, event = pcall(function()
+        return Frame.MouseEnter
+    end)
+
+    if success then
+        Frame.Active = true
+        event:Connect(function()
+            local inputConnection = Frame.InputBegan:Connect(function(Input)
+                if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then
+                    local offset = Vector2.new(Mouse.X - Frame.AbsolutePosition.X, Mouse.Y - Frame.AbsolutePosition.Y)
+                    while RunService.Heartbeat:Wait() and InputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) do
+                        Frame:TweenPosition(
+                            UDim2.new(
+                                0,
+                                Mouse.X - offset.X + (Frame.Size.X.Offset * Frame.AnchorPoint.X),
+                                0,
+                                Mouse.Y - offset.Y + (Frame.Size.Y.Offset * Frame.AnchorPoint.Y)
+                            ),
+                            "Out",
+                            "Quad",
+                            0.1,
+                            true
+                        )
+                    end
+                end
+            end)
+
+            local leaveConnection
+            leaveConnection = Frame.MouseLeave:Connect(function()
+                inputConnection:Disconnect()
+                leaveConnection:Disconnect()
+            end)
+        end)
+    end
+end
+
+-- Resizer: Resizes a GUI based on the parent size
+function Resizer.new(Parent, Child)
+    Parent:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+        Child.Size = UDim2.new(Child.Size.X.Scale, Child.Size.X.Offset, Child.Size.Y.Scale, Parent.AbsoluteSize.Y)
+    end)
+end
+
+-- Default UI settings
+local Defaults = {
+    TextColor = Color3.fromRGB(255, 255, 255),
+    UnderlineColor = Color3.fromRGB(0, 255, 140),
+    BarColor = Color3.fromRGB(40, 40, 40),
+    BackgroundColor = Color3.fromRGB(30, 30, 30),
+    BoxColor = Color3.fromRGB(50, 50, 50)
+}
+
+-- Helper to create UI elements
+function Library:Create(Class, Properties)
+    local Object = Instance.new(Class)
+
+    for Property, Value in pairs(Properties) do
+        if Property ~= "Parent" then
+            Object[Property] = Value
+        end
+    end
+
+    Object.Parent = Properties.Parent
+    return Object
+end
+
+-- Create a new window
+function Library:CreateWindow(Options)
+    assert(Options.text, "Window name is required")
+    local Window = {
+        Count = 0,
+        Toggles = {},
+        Closed = false
+    }
+
+    setmetatable(Options, { __index = Defaults })
+
+    self.WindowCount += 1
+
+    Library.GUI = Library.GUI or self:Create("ScreenGui", { Name = "UILibrary", Parent = CoreGui })
+
+    -- Main Frame
+    Window.Frame = self:Create("Frame", {
+        Name = Options.text,
+        Parent = Library.GUI,
+        Active = true,
+        BackgroundTransparency = 0,
+        Size = UDim2.new(0, 190, 0, 30),
+        Position = UDim2.new(0, (15 + ((200 * self.WindowCount) - 200)), 0, 15),
+        BackgroundColor3 = Options.BarColor,
+        BorderSizePixel = 0
+    })
+
+    -- Background Frame
+    Window.Background = self:Create("Frame", {
+        Name = "Background",
+        Parent = Window.Frame,
+        BorderSizePixel = 0,
+        BackgroundColor3 = Options.BackgroundColor,
+        Position = UDim2.new(0, 0, 1, 0),
+        Size = UDim2.new(1, 0, 0, 25),
+        ClipsDescendants = true
+    })
+
+    -- Container
+    Window.Container = self:Create("Frame", {
+        Name = "Container",
+        Parent = Window.Frame,
+        BorderSizePixel = 0,
+        BackgroundColor3 = Options.BackgroundColor,
+        Position = UDim2.new(0, 0, 1, 0),
+        Size = UDim2.new(1, 0, 0, 25),
+        ClipsDescendants = true
+    })
+
+    -- Layout and Padding
+    self:Create("UIListLayout", {
+        Name = "Sorter",
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Parent = Window.Container
+    })
+
+    self:Create("UIPadding", {
+        Name = "Padding",
+        PaddingLeft = UDim.new(0, 10),
+        PaddingTop = UDim.new(0, 5),
+        Parent = Window.Container
+    })
+
+    -- Underline
+    self:Create("Frame", {
+        Name = "Underline",
+        Size = UDim2.new(1, 0, 0, 1),
+        Position = UDim2.new(0, 0, 1, -1),
+        BorderSizePixel = 0,
+        BackgroundColor3 = Options.UnderlineColor,
+        Parent = Window.Frame
+    })
+
+    -- Add toggle, resize, and UI functions
+    function Window:Resize(...) ... end
+    function Window:AddToggle(...) ... end
+    function Window:AddBox(...) ... end
+    function Window:AddButton(...) ... end
+    function Window:AddLabel(...) ... end
+    function Window:AddDropdown(...) ... end
+
+    Dragger.new(Window.Frame)
+    Resizer.new(Window.Background, Window.Container)
+
+    return Window
+end
+
+return Library
