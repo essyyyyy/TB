@@ -5,49 +5,60 @@ local library = {
 local dragger = {}
 local resizer = {}
 
--- Dragger and Resizer Modules
-local mouse = game:GetService("Players").LocalPlayer:GetMouse()
-local inputService = game:GetService("UserInputService")
-local heartbeat = game:GetService("RunService").Heartbeat
+-- Utility services
+local players = game:GetService("Players")
+local userInputService = game:GetService("UserInputService")
+local runService = game:GetService("RunService")
+local debris = game:GetService("Debris")
+local textService = game:GetService("TextService")
 
-function dragger.new(frame)
-    local success, event = pcall(function()
-        return frame.MouseEnter
-    end)
+local mouse = players.LocalPlayer:GetMouse()
 
-    if success then
-        frame.Active = true
+-- Dragger module for window movement
+do
+    function dragger.new(frame)
+        local success, event = pcall(function()
+            return frame.MouseEnter
+        end)
 
-        event:Connect(function()
-            local input = frame.InputBegan:Connect(function(key)
-                if key.UserInputType == Enum.UserInputType.MouseButton1 or key.UserInputType == Enum.UserInputType.Touch then
-                    local objectPosition = Vector2.new(mouse.X - frame.AbsolutePosition.X, mouse.Y - frame.AbsolutePosition.Y)
-                    while heartbeat:Wait() and inputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) do
-                        frame:TweenPosition(
-                            UDim2.new(0, mouse.X - objectPosition.X + (frame.Size.X.Offset * frame.AnchorPoint.X),
-                                0, mouse.Y - objectPosition.Y + (frame.Size.Y.Offset * frame.AnchorPoint.Y)),
-                            "Out", "Quad", 0.1, true
-                        )
+        if success then
+            frame.Active = true
+            event:Connect(function()
+                local input = frame.InputBegan:Connect(function(key)
+                    if key.UserInputType == Enum.UserInputType.MouseButton1 then
+                        local offset = Vector2.new(mouse.X - frame.AbsolutePosition.X, mouse.Y - frame.AbsolutePosition.Y)
+                        while runService.Heartbeat:Wait() and userInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) do
+                            frame:TweenPosition(
+                                UDim2.new(0, mouse.X - offset.X + frame.Size.X.Offset * frame.AnchorPoint.X, 0, mouse.Y - offset.Y + frame.Size.Y.Offset * frame.AnchorPoint.Y),
+                                Enum.EasingDirection.Out,
+                                Enum.EasingStyle.Quad,
+                                0.1,
+                                true
+                            )
+                        end
                     end
-                end
-            end)
+                end)
 
-            local leave
-            leave = frame.MouseLeave:Connect(function()
-                input:Disconnect()
-                leave:Disconnect()
+                local leave
+                leave = frame.MouseLeave:Connect(function()
+                    input:Disconnect()
+                    leave:Disconnect()
+                end)
             end)
+        end
+    end
+end
+
+-- Resizer module for adjusting container size
+do
+    function resizer.new(parent, target)
+        parent:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+            target.Size = UDim2.new(target.Size.X.Scale, target.Size.X.Offset, target.Size.Y.Scale, parent.AbsoluteSize.Y)
         end)
     end
 end
 
-function resizer.new(parent, sibling)
-    parent:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
-        sibling.Size = UDim2.new(sibling.Size.X.Scale, sibling.Size.X.Offset, sibling.Size.Y.Scale, parent.AbsoluteSize.Y)
-    end)
-end
-
--- Library Defaults
+-- Default colors for the UI
 local defaults = {
     txtcolor = Color3.fromRGB(255, 255, 255),
     underline = Color3.fromRGB(0, 255, 140),
@@ -55,22 +66,23 @@ local defaults = {
     bgcolor = Color3.fromRGB(30, 30, 30),
 }
 
--- Library Methods
+-- Utility function to create UI elements
 function library:Create(class, props)
     local object = Instance.new(class)
-
-    for prop, value in pairs(props) do
-        if prop ~= "Parent" then
-            object[prop] = value
+    for key, value in pairs(props) do
+        if key ~= "Parent" then
+            object[key] = value
         end
     end
-
     object.Parent = props.Parent
     return object
 end
 
+-- Window creation
 function library:CreateWindow(options)
-    assert(options.text, "Window must have a name")
+    assert(options.text, "Window name missing")
+
+    options = setmetatable(options or {}, { __index = defaults })
 
     local window = {
         count = 0,
@@ -78,133 +90,103 @@ function library:CreateWindow(options)
         closed = false,
     }
 
-    options = setmetatable(options or {}, { __index = defaults })
-
     self.windowcount += 1
 
-    library.gui = library.gui or self:Create("ScreenGui", { Name = "UILibrary", Parent = game:GetService("CoreGui") })
+    library.gui = library.gui or self:Create("ScreenGui", {
+        Name = "UILibrary",
+        Parent = game:GetService("CoreGui"),
+    })
 
-    -- Create window frame
-    window.frame = self:Create("Frame", {
+    local frame = self:Create("Frame", {
         Name = options.text,
         Parent = library.gui,
         Active = true,
         Size = UDim2.new(0, 190, 0, 30),
-        Position = UDim2.new(0, (15 + ((200 * self.windowcount) - 200)), 0, 15),
+        Position = UDim2.new(0, (15 + (200 * (self.windowcount - 1))), 0, 15),
         BackgroundColor3 = options.barcolor,
         BorderSizePixel = 0,
     })
 
-    window.background = self:Create("Frame", {
-        Name = "Background",
-        Parent = window.frame,
-        BorderSizePixel = 0,
-        BackgroundColor3 = options.bgcolor,
-        Position = UDim2.new(0, 0, 1, 0),
-        Size = UDim2.new(1, 0, 0, 25),
-        ClipsDescendants = true,
-    })
-
-    window.container = self:Create("Frame", {
+    local container = self:Create("Frame", {
         Name = "Container",
-        Parent = window.frame,
-        BorderSizePixel = 0,
-        BackgroundColor3 = options.bgcolor,
+        Parent = frame,
         Position = UDim2.new(0, 0, 1, 0),
         Size = UDim2.new(1, 0, 0, 25),
+        BackgroundColor3 = options.bgcolor,
         ClipsDescendants = true,
+        BorderSizePixel = 0,
     })
 
-    window.organizer = self:Create("UIListLayout", {
-        Name = "Sorter",
+    self:Create("UIListLayout", {
+        Parent = container,
         SortOrder = Enum.SortOrder.LayoutOrder,
-        Parent = window.container,
     })
 
-    window.padder = self:Create("UIPadding", {
-        Name = "Padding",
+    self:Create("UIPadding", {
+        Parent = container,
         PaddingLeft = UDim.new(0, 10),
         PaddingTop = UDim.new(0, 5),
-        Parent = window.container,
     })
 
+    -- Underline and toggle button
     self:Create("Frame", {
         Name = "Underline",
+        Parent = frame,
         Size = UDim2.new(1, 0, 0, 1),
         Position = UDim2.new(0, 0, 1, -1),
-        BorderSizePixel = 0,
         BackgroundColor3 = options.underline,
-        Parent = window.frame,
+        BorderSizePixel = 0,
     })
 
-    -- Toggle Button
     local toggleButton = self:Create("TextButton", {
         Name = "Toggle",
-        ZIndex = 2,
-        BackgroundTransparency = 1,
+        Parent = frame,
         Position = UDim2.new(1, -25, 0, 0),
         Size = UDim2.new(0, 25, 1, 0),
         Text = "-",
-        TextSize = 17,
         TextColor3 = options.txtcolor,
-        Font = Enum.Font.FredokaOne,
-        Parent = window.frame,
+        BackgroundTransparency = 1,
     })
 
     toggleButton.MouseButton1Click:Connect(function()
         window.closed = not window.closed
         toggleButton.Text = window.closed and "+" or "-"
-
-        if window.closed then
-            window:Resize(true, UDim2.new(1, 0, 0, 0))
-        else
-            window:Resize(true)
-        end
+        container:TweenSize(window.closed and UDim2.new(1, 0, 0, 0) or UDim2.new(1, 0, 0, container.AbsoluteSize.Y), Enum.EasingDirection.Out, Enum.EasingStyle.Sine, 0.5, true)
     end)
 
-    -- Title Label
-    self:Create("TextLabel", {
-        Size = UDim2.new(1, 0, 1, 0),
-        BackgroundTransparency = 1,
-        TextColor3 = options.txtcolor,
-        TextSize = 17,
-        Font = Enum.Font.FredokaOne,
-        Text = options.text or "Window",
-        Name = "Window",
-        Parent = window.frame,
-    })
+    -- Resize and drag support
+    dragger.new(frame)
+    resizer.new(frame, container)
 
-    -- Drag and Resize
-    dragger.new(window.frame)
-    resizer.new(window.background, window.container)
+    function window:AddToggle(text, callback)
+        local toggle = self:Create("TextLabel", {
+            Text = text,
+            Size = UDim2.new(1, -10, 0, 20),
+            BackgroundTransparency = 1,
+            TextColor3 = Color3.fromRGB(255, 255, 255),
+            TextXAlignment = Enum.TextXAlignment.Left,
+            Parent = container,
+        })
 
-    -- Helper Functions
-    local function getSize()
-        local ySize = 0
-        for _, object in pairs(window.container:GetChildren()) do
-            if not object:IsA("UIListLayout") and not object:IsA("UIPadding") then
-                ySize += object.AbsoluteSize.Y
-            end
-        end
-        return UDim2.new(1, 0, 0, ySize + 10)
+        local button = self:Create("TextButton", {
+            Text = "OFF",
+            Size = UDim2.new(0, 50, 1, 0),
+            Position = UDim2.new(1, -50, 0, 0),
+            TextColor3 = Color3.fromRGB(255, 25, 25),
+            BackgroundTransparency = 1,
+            Parent = toggle,
+        })
+
+        button.MouseButton1Click:Connect(function()
+            local state = not window.toggles[text]
+            window.toggles[text] = state
+            button.Text = state and "ON" or "OFF"
+            button.TextColor3 = state and Color3.fromRGB(0, 255, 140) or Color3.fromRGB(255, 25, 25)
+            callback(state)
+        end)
     end
-
-    function window:Resize(tween, change)
-        local size = change or getSize()
-        self.container.ClipsDescendants = true
-
-        if tween then
-            self.background:TweenSize(size, "Out", "Sine", 0.5, true)
-        else
-            self.background.Size = size
-        end
-    end
-
-    -- Other Methods: AddToggle, AddBox, AddButton, AddLabel, AddDropdown (Unchanged)
-    -- ...
 
     return window
 end
 
 return library
-
