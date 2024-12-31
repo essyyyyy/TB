@@ -3692,7 +3692,7 @@ task.delay(4, function()
 
 		task.wait(0.5)
 		Main.Notice.Visible = false 
+        end
 	end
 end)
-end
 return RayfieldLibrary
